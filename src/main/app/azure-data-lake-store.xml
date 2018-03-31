@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+	<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="${http.port}" doc:name="HTTP Listener Configuration"/>
+
+    <http:request-config name="ADLS_HTTPS_Request" protocol="HTTPS" host="${adls.host}" port="443"  doc:name="HTTP Request Configuration" >
+        <tls:context>
+            <tls:trust-store/>
+            <tls:key-store type="jks" path="keystore.jks" keyPassword="mule123" password="mule123"/>
+        </tls:context>
+    </http:request-config>
+    <http:request-config name="OAuth_Request" protocol="HTTPS" host="login.microsoftonline.com" port="443" basePath="/" doc:name="HTTP Request Configuration">
+        <tls:context>
+            <tls:trust-store insecure="true"/>
+            <tls:key-store type="jks" path="keystore.jks" keyPassword="mule123" password="mule123"/>
+        </tls:context>
+    </http:request-config>
+    <flow name="liststatus-flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/liststatus" doc:name="HTTP - liststatus"/>
+        <set-payload value="#[['resource':'${azure.login.resource}','client_id':'${adls.client_id}','client_secret':'${adls.client_secret}','grant_type':'${adls.grant_type}']]" doc:name="Create POST Request"/>
+        <http:request config-ref="OAuth_Request" path="${oauth.path}" method="POST" doc:name="OAuth Request"/>
+        <set-variable variableName="accessToken" value="#[json:access_token]" mimeType="application/json" doc:name="Store Access Token"/>
+        <http:request config-ref="ADLS_HTTPS_Request" path="webhdfs/v1/?op=LISTSTATUS" method="GET" doc:name="HDFS Request">
+            <http:request-builder>
+                <http:header headerName="host" value="${adls.host}"/>
+                <http:header headerName="content-type" value="application/json"/>
+                <http:header headerName="authorization" value="Bearer #[flowVars.accessToken]"/>
+                <http:header headerName="cache-control" value="no-cache"/>
+            </http:request-builder>
+        </http:request>
+    </flow>
+    <flow name="create-file-flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/create" doc:name="HTTP - create"/>
+        <logger level="INFO" doc:name="Logger"/>
+        <enricher source="#[json:access_token]" target="#[flowVars.accessToken]" doc:name="Message Enricher">
+            <processor-chain doc:name="Processor Chain">
+                <set-payload value="#[['resource':'${azure.login.resource}','client_id':'${adls.client_id}','client_secret':'${adls.client_secret}','grant_type':'${adls.grant_type}']]" doc:name="Create POST Request"/>
+                <http:request config-ref="OAuth_Request" path="${oauth.path}" method="POST" doc:name="OAuth Request"/>
+            </processor-chain>
+        </enricher>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <http:request config-ref="ADLS_HTTPS_Request" path="webhdfs/v1/#[message.inboundProperties.'http.query.params'.name]?op=CREATE" method="PUT" doc:name="HDFS Request">
+            <http:request-builder>
+                <http:header headerName="host" value="${adls.host}"/>
+                <http:header headerName="authorization" value="Bearer #[flowVars.accessToken]"/>
+                <http:header headerName="cache-control" value="no-cache"/>
+            </http:request-builder>
+        </http:request>
+    </flow>
+  
+</mule>
