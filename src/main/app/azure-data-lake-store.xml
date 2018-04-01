@@ -41,7 +41,6 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
     </flow>
     <flow name="create-file-flow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/create" doc:name="HTTP - create"/>
-        <logger level="INFO" doc:name="Logger"/>
         <enricher source="#[json:access_token]" target="#[flowVars.accessToken]" doc:name="Message Enricher">
             <processor-chain doc:name="Processor Chain">
                 <set-payload value="#[['resource':'${azure.login.resource}','client_id':'${adls.client_id}','client_secret':'${adls.client_secret}','grant_type':'${adls.grant_type}']]" doc:name="Create POST Request"/>
